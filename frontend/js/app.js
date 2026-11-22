@@ -38,6 +38,7 @@ createApp({
     const forfeits = ref([]);
     const recon = ref({});
     const partyProof = ref(null);
+    const accountRecon = ref(null);
     const proofParty = ref("P-EAST");
     const audits = ref([]);
     const contention = ref([]);
@@ -48,6 +49,8 @@ createApp({
     const selectedCage = ref(null);
     const topupJobs = ref([]);
     const splitJobs = ref([]);
+    const reversalPolicy = ref({});
+    const reversalAudit = ref({});
 
     const bondForm = ref({
       party_key: "P-NEW",
@@ -58,6 +61,13 @@ createApp({
       party_key: "P-WEST",
       amount: 20000,
       memo: "追加入金",
+    });
+    const reversalForm = ref({
+      party_key: "",
+      deposit_id: null,
+      amount: null,
+      reason: "入金金额记错",
+      path_mode: "A_same_txn",
     });
     const freezeForm = ref({
       party_key: "P-WEST",
@@ -195,6 +205,8 @@ createApp({
           lk,
           tj,
           sj,
+          rp,
+          ra,
         ] = await Promise.all([
           api.bonds(),
           api.cages(),
@@ -207,6 +219,8 @@ createApp({
           api.locks(),
           api.topupJobs(),
           api.splitJobs(),
+          api.reversalPolicy(),
+          api.auditReversals(),
         ]);
         bonds.value = b.items || [];
         cages.value = c.items || [];
@@ -219,6 +233,10 @@ createApp({
         locks.value = lk.items || [];
         topupJobs.value = tj.items || [];
         splitJobs.value = sj.items || [];
+        reversalPolicy.value = rp || {};
+        reversalAudit.value = ra || {};
+        // 口径来自接口锁死值，页面不允许自选乙路径
+        reversalForm.value.path_mode = (rp && rp.locked_path) || "A_same_txn";
         if (!attestForm.value.cage_id && frozenCages.value.length) {
           attestForm.value.cage_id = frozenCages.value[0].id;
         }
@@ -261,6 +279,29 @@ createApp({
         flashOk("入金成功");
         await refresh();
         await loadBondDetail(depositForm.value.party_key);
+      } catch (e) {
+        flashErr(e);
+      }
+    }
+
+    async function reverseDeposit() {
+      clearFlash();
+      const form = reversalForm.value;
+      if (!form.party_key || !form.deposit_id || !(form.amount > 0)) {
+        flashErr(new Error("请填写当事人键、入金流水ID与大于0的冲正金额"));
+        return;
+      }
+      try {
+        const row = await api.reverseDeposit({
+          party_key: form.party_key,
+          deposit_id: Number(form.deposit_id),
+          amount: Number(form.amount),
+          reason: form.reason || "入金冲正",
+          path_mode: reversalPolicy.value.locked_path || "A_same_txn",
+        });
+        flashOk(`冲正成功 ${row.reversal_ref}：余额 ${fmt(row.balance_before)} → ${fmt(row.balance_after)}，冻结未动`);
+        await refresh();
+        await loadBondDetail(form.party_key);
       } catch (e) {
         flashErr(e);
       }
@@ -362,6 +403,17 @@ createApp({
       }
     }
 
+    async function loadAccountReconcile() {
+      clearFlash();
+      try {
+        if (!proofParty.value) throw new Error("请填写当事人键");
+        accountRecon.value = await api.reconcileAccount(proofParty.value);
+        flashOk("账户轧平已加载（含入金冲正）");
+      } catch (e) {
+        flashErr(e);
+      }
+    }
+
     async function doTopupStub() {
       clearFlash();
       try {
@@ -407,6 +459,7 @@ createApp({
       forfeits,
       recon,
       partyProof,
+      accountRecon,
       proofParty,
       audits,
       contention,
@@ -417,8 +470,11 @@ createApp({
       selectedCage,
       topupJobs,
       splitJobs,
+      reversalPolicy,
+      reversalAudit,
       bondForm,
       depositForm,
+      reversalForm,
       freezeForm,
       attestForm,
       releaseForm,
@@ -436,6 +492,7 @@ createApp({
       statusClass,
       openBond,
       deposit,
+      reverseDeposit,
       loadBondDetail,
       freezeCage,
       selectCage,
@@ -444,6 +501,7 @@ createApp({
       doForfeit,
       loadReconcile,
       loadProof,
+      loadAccountReconcile,
       doTopupStub,
       doSplitStub,
     };

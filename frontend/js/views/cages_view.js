@@ -1,7 +1,7 @@
 export const cagesViewTemplate = `
 <section class="panel">
   <h2>入笼冻结</h2>
-  <p class="hint">从当事人可用保证金划入新笼，写入笼代。冻结后须履约核验，才能解笼或罚没。</p>
+  <p class="hint">从当事人可用保证金划入新笼，写入笼代。冻结后须履约核验，才能解笼或罚没。入金冲正只扣账户可用余额、不触碰任何笼字段与账户冻结，本页笼额与冻结始终以母仓 cages / bond_accounts 为准。</p>
   <div class="grid-2">
     <div>
       <div class="form-row">

@@ -4,9 +4,81 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
-from db import connect
+from db import available_of, connect
 
 router = APIRouter(tags=["reconcile"])
+
+LIVE_CAGE_STATUS = (
+    "已冻结",
+    "核验通过",
+    "核验违约",
+    "部分解笼",
+    "部分罚没",
+)
+
+
+def _account_reconcile(conn, party_key: str) -> dict:
+    """账户侧轧平：净入金（含负额冲正）− 已拨付 − 已罚没 == 账面余额；冻结 == 活笼可用。"""
+    acct = conn.execute(
+        "SELECT * FROM bond_accounts WHERE party_key=?", (party_key,)
+    ).fetchone()
+    if not acct:
+        raise HTTPException(404, "保证金户不存在")
+    gross_deposit = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) s FROM deposit_ledger WHERE party_key=? AND amount>0",
+        (party_key,),
+    ).fetchone()["s"]
+    reversed_total = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) s FROM deposit_reversals WHERE party_key=?",
+        (party_key,),
+    ).fetchone()["s"]
+    net_deposit = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) s FROM deposit_ledger WHERE party_key=?",
+        (party_key,),
+    ).fetchone()["s"]
+    released = conn.execute(
+        """SELECT COALESCE(SUM(r.amount),0) s FROM releases r
+           JOIN cages c ON c.id=r.cage_id
+           WHERE c.party_key=? AND r.status='已拨付'""",
+        (party_key,),
+    ).fetchone()["s"]
+    forfeited = conn.execute(
+        """SELECT COALESCE(SUM(f.amount),0) s FROM forfeits f
+           JOIN cages c ON c.id=f.cage_id
+           WHERE c.party_key=? AND f.status='已罚没'""",
+        (party_key,),
+    ).fetchone()["s"]
+    live_frozen = conn.execute(
+        """SELECT COALESCE(SUM(available),0) s FROM cages
+           WHERE party_key=? AND status IN (?,?,?,?,?)""",
+        (party_key, *LIVE_CAGE_STATUS),
+    ).fetchone()["s"]
+    balance = float(acct["balance"])
+    frozen = float(acct["frozen"])
+    identity_left = round(float(net_deposit) - float(released) - float(forfeited), 6)
+    balance_identity_ok = abs(identity_left - round(balance, 6)) < 1e-6
+    frozen_matches = abs(frozen - float(live_frozen)) < 1e-6
+    return {
+        "party_key": party_key,
+        "account": dict(acct),
+        "available": available_of(acct),
+        "gross_deposit": float(gross_deposit),
+        "reversed_total": float(reversed_total),
+        "net_deposit": float(net_deposit),
+        "released_total": float(released),
+        "forfeited_total": float(forfeited),
+        "balance_identity_left": identity_left,
+        "balance_identity_right": round(balance, 6),
+        "balance_identity_ok": balance_identity_ok,
+        "account_frozen": frozen,
+        "live_cage_available": float(live_frozen),
+        "frozen_matches_live": frozen_matches,
+        "balanced": balance_identity_ok and frozen_matches,
+        "proof": {
+            "balance_formula": "净入金(入金−冲正) − 已拨付 − 已罚没 == 账户余额",
+            "frozen_formula": "账户冻结 == 活笼可用合计",
+        },
+    }
 
 
 def _reconcile_cage(conn, cage) -> dict:
@@ -34,8 +106,8 @@ def _reconcile_cage(conn, cage) -> dict:
     ).fetchone()
     live_frozen = conn.execute(
         """SELECT COALESCE(SUM(available),0) s FROM cages
-           WHERE party_key=? AND status IN ('已冻结','核验通过','核验违约','部分解笼','部分罚没')""",
-        (party,),
+           WHERE party_key=? AND status IN (?,?,?,?,?)""",
+        (party, *LIVE_CAGE_STATUS),
     ).fetchone()["s"]
     return {
         "cage_id": cage_id,
@@ -91,46 +163,37 @@ def reconcile_one(cage_code: str, authorization: AuthHeader = None):
         return _reconcile_cage(conn, cage)
 
 
-@router.get("/api/proof/{party_key}")
-def party_proof(party_key: str, authorization: AuthHeader = None):
-    """当事人级互证：账户冻结 vs 活笼可用合计。"""
+@router.get("/api/reconcile/accounts/{party_key}")
+def reconcile_account(party_key: str, authorization: AuthHeader = None):
+    """账户侧轧平：冲正后余额回正、冻结不被误伤的同源证据。"""
     require_user(authorization)
     with connect() as conn:
-        acct = conn.execute(
-            "SELECT * FROM bond_accounts WHERE party_key=?", (party_key,)
-        ).fetchone()
-        if not acct:
-            raise HTTPException(404, "保证金户不存在")
-        live = conn.execute(
-            """SELECT COALESCE(SUM(available),0) s FROM cages
-               WHERE party_key=? AND status IN
-               ('已冻结','核验通过','核验违约','部分解笼','部分罚没')""",
-            (party_key,),
-        ).fetchone()["s"]
-        released = conn.execute(
-            """SELECT COALESCE(SUM(r.amount),0) s FROM releases r
-               JOIN cages c ON c.id=r.cage_id
-               WHERE c.party_key=? AND r.status='已拨付'""",
-            (party_key,),
-        ).fetchone()["s"]
-        forfeited = conn.execute(
-            """SELECT COALESCE(SUM(f.amount),0) s FROM forfeits f
-               JOIN cages c ON c.id=f.cage_id
-               WHERE c.party_key=? AND f.status='已罚没'""",
-            (party_key,),
-        ).fetchone()["s"]
-        frozen = float(acct["frozen"])
-        live_f = float(live)
+        return _account_reconcile(conn, party_key)
+
+
+@router.get("/api/proof/{party_key}")
+def party_proof(party_key: str, authorization: AuthHeader = None):
+    """当事人级互证：账户冻结 vs 活笼可用 + 余额轧平式（含冲正）。"""
+    require_user(authorization)
+    with connect() as conn:
+        rec = _account_reconcile(conn, party_key)
         return {
             "party_key": party_key,
-            "account": dict(acct),
-            "live_cage_available": live_f,
-            "released_total": float(released),
-            "forfeited_total": float(forfeited),
-            "frozen_matches_live": abs(frozen - live_f) < 1e-6,
+            "account": rec["account"],
+            "live_cage_available": rec["live_cage_available"],
+            "released_total": rec["released_total"],
+            "forfeited_total": rec["forfeited_total"],
+            "frozen_matches_live": rec["frozen_matches_live"],
+            "gross_deposit": rec["gross_deposit"],
+            "reversed_total": rec["reversed_total"],
+            "net_deposit": rec["net_deposit"],
+            "balance_identity_ok": rec["balance_identity_ok"],
             "proof": {
                 "formula": "account.frozen == sum(live cage available)",
-                "left": frozen,
-                "right": live_f,
+                "left": rec["account_frozen"],
+                "right": rec["live_cage_available"],
+                "balance_formula": rec["proof"]["balance_formula"],
+                "balance_left": rec["balance_identity_left"],
+                "balance_right": rec["balance_identity_right"],
             },
         }

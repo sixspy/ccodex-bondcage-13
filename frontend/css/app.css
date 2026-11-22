@@ -288,6 +288,7 @@ th {
 .badge.pass { color: var(--ok); }
 .badge.fail { color: var(--bad); }
 .badge.done { color: var(--stamp); }
+.amt-neg { color: var(--bad); font-weight: 700; }
 
 .cage-cards {
   display: grid;

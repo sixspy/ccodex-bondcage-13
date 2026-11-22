@@ -5,6 +5,12 @@ export const stubsViewTemplate = `
     现状：topup_svc / split_svc 为空桩。只登记 job 与审计，不改笼额、不生子笼。
     题面落地时须择一写路径（同笼扩代 vs 新笼桥接；整笔切分 vs 影子子笼）。
   </div>
+  <div class="stub-banner" style="border-left:4px solid var(--steel)">
+    入金冲正口径（{{ reversalPolicy.locked_date || '2026-11-22' }} 当日锁死，五页同源只读）：
+    <strong>{{ reversalPolicy.locked_label || '甲路径·同事务回滚' }}</strong>
+    —— {{ reversalPolicy.memo || '同一提交写冲正流水、扣减账户余额并记审计；扣后可用为负则整笔回滚' }}。
+    影子冲正单晋升未启用，偏离即记冲正偏航并拒写。
+  </div>
   <div class="grid-2">
     <div>
       <h3>增补入笼</h3>

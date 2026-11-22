@@ -16,6 +16,15 @@ class DepositIn(BaseModel):
     memo: str = "手工入金"
 
 
+class DepositReversalIn(BaseModel):
+    party_key: str
+    deposit_id: int
+    amount: float = Field(gt=0)
+    reason: str = Field(min_length=2, max_length=200)
+    # 甲路径锁死；传乙路径或其他值记冲正偏航并拒写
+    path_mode: str = "A_same_txn"
+
+
 class CageFreezeIn(BaseModel):
     party_key: str
     contract_no: str = Field(min_length=2, max_length=64)

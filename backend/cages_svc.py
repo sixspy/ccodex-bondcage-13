@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
-from db import connect, now_iso, write_audit
+from db import available_of, connect, now_iso, write_audit
 from locks import release, require_lock
 from models import CageFreezeIn
 
@@ -75,7 +75,7 @@ def freeze_cage(body: CageFreezeIn, authorization: AuthHeader = None):
             if acct["status"] != "正常":
                 raise HTTPException(409, "账户状态禁止入笼")
             amount = float(body.amount)
-            free = float(acct["balance"]) - float(acct["frozen"])
+            free = available_of(acct)
             if amount > free + 1e-9:
                 raise HTTPException(409, "可用保证金不足，无法入笼")
             code = body.cage_code or _next_cage_code(conn, body.party_key)

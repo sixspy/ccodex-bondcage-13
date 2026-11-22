@@ -23,9 +23,10 @@
 | 项 | 内容 |
 |----|------|
 | 业务 LOC | **≥2900**（py+前端，不含 vue.global / Docker / README；自检约 2984） |
-| 后端模块 | db / auth / locks / bonds_svc / cages_svc / attest_svc / release_svc / forfeit_svc / reconcile_svc / audit_svc / topup_svc / split_svc |
+| 后端模块 | db / auth / locks / bonds_svc / cages_svc / attest_svc / release_svc / forfeit_svc / reconcile_svc / audit_svc / topup_svc / split_svc / reversal_svc / reversal_policy |
 | 前端视图 | 保证金户 / 入笼冻结 / 履约核验 / 解笼拨付 / 罚没册 / 对账互证 / 审计争用 / 增补拆笼空桩（8 页） |
 | 空桩 | topup（增补入笼）、split（拆笼分拨）——前后端均有 |
+| 入金冲正 | 甲路径·同事务回滚（2026-11-22 当日锁死，见 `docs/入金冲正纪要_2026-11-22.md`）：`POST /api/bonds/deposit/reversal`，同事务写冲正流水+扣余额+审计，扣后可用为负整笔回滚；乙路径影子晋升不启用，偏航记 `deposit_reversal_deviation` 并拒写 |
 
 ## 主链路
 

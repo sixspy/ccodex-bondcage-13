@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user, require_writer
-from db import connect, now_iso, write_audit
+from db import available_of, connect, now_iso, write_audit
 from locks import release, require_lock
 from models import BondOpenIn, DepositIn
 
@@ -34,6 +34,10 @@ def get_bond(party_key: str, authorization: AuthHeader = None):
             """SELECT * FROM deposit_ledger WHERE party_key=? ORDER BY id DESC LIMIT 50""",
             (party_key,),
         ).fetchall()
+        reversals = conn.execute(
+            """SELECT * FROM deposit_reversals WHERE party_key=? ORDER BY id DESC LIMIT 50""",
+            (party_key,),
+        ).fetchall()
         cages = conn.execute(
             """SELECT id,cage_code,contract_no,amount,available,status,generation
                FROM cages WHERE party_key=? ORDER BY id DESC""",
@@ -42,6 +46,7 @@ def get_bond(party_key: str, authorization: AuthHeader = None):
         return {
             "account": dict(row),
             "deposits": [dict(d) for d in deposits],
+            "reversals": [dict(r) for r in reversals],
             "cages": [dict(c) for c in cages],
         }
 

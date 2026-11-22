@@ -52,7 +52,22 @@ export function createApi(getToken, onUnauthorized) {
       req("/api/forfeits", { method: "POST", body: JSON.stringify(data) }),
     reconcile: () => req("/api/reconcile"),
     reconcileOne: (code) => req(`/api/reconcile/${encodeURIComponent(code)}`),
+    reconcileAccount: (party) =>
+      req(`/api/reconcile/accounts/${encodeURIComponent(party)}`),
     proof: (party) => req(`/api/proof/${encodeURIComponent(party)}`),
+    reversalPolicy: () => req("/api/reversal-policy"),
+    reverseDeposit: (data) =>
+      req("/api/bonds/deposit/reversal", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    reversals: (party) =>
+      req(
+        party
+          ? `/api/bonds/reversals?party_key=${encodeURIComponent(party)}`
+          : "/api/bonds/reversals"
+      ),
+    auditReversals: () => req("/api/audit/reversals"),
     audit: () => req("/api/audit?limit=120"),
     contention: () => req("/api/contention"),
     locks: () => req("/api/locks"),

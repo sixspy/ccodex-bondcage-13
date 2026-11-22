@@ -27,6 +27,12 @@ PRODUCT_META = {
         "split",
     ],
     "stubs": ["topup_cage", "split_cage"],
+    # 入金冲正口径：2026-11-22 当日锁死甲路径（同事务回滚），见 docs/入金冲正纪要_2026-11-22.md
+    "deposit_reversal": {
+        "locked_path": "A_same_txn",
+        "locked_date": "2026-11-22",
+        "memo": "同一提交写冲正流水、扣减账户余额并记审计；扣后可用为负则整笔回滚",
+    },
 }
 
 
@@ -159,6 +165,20 @@ CREATE TABLE IF NOT EXISTS deposit_ledger(
   created_at TEXT NOT NULL,
   actor TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS deposit_reversals(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reversal_ref TEXT UNIQUE NOT NULL,
+  party_key TEXT NOT NULL,
+  deposit_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  reason TEXT NOT NULL,
+  path_mode TEXT NOT NULL,
+  status TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(party_key) REFERENCES bond_accounts(party_key),
+  FOREIGN KEY(deposit_id) REFERENCES deposit_ledger(id)
+);
 """
 
 
@@ -168,6 +188,11 @@ def write_audit(conn: sqlite3.Connection, actor: str, action: str, target: str, 
            VALUES (?,?,?,?,?)""",
         (actor, action, target, json.dumps(payload, ensure_ascii=False), now_iso()),
     )
+
+
+def available_of(acct) -> float:
+    """账户可用额唯一口径：余额 − 已冻结。入笼/冲正共用，禁止各服务各算各的。"""
+    return round(float(acct["balance"]) - float(acct["frozen"]), 6)
 
 
 def _load_json(name: str):
